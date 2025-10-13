@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
@@ -62,10 +61,11 @@ interface HistoricoItem {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     
@@ -167,10 +167,11 @@ export async function GET(
 // PUT - Atualizar desafio
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const body = await request.json();
     
     if (!desafioId) {
@@ -234,10 +235,11 @@ export async function PUT(
 // DELETE - Deletar desafio (admin only)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     
     if (!desafioId) {
       return NextResponse.json(

@@ -8,10 +8,11 @@ const desafiosManager = new DesafiosManager();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     
@@ -44,10 +45,11 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const body = await request.json();
     const { userId, valor, acao, descricao } = body;
     
