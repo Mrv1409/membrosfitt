@@ -43,7 +43,19 @@ const nextConfig: NextConfig = {
         'google-auth-library': 'google-auth-library',
       };
     }
+
+    // ✅ NOVO: Ignorar pasta functions no build do Next.js
+    config.module.rules.push({
+      test: /functions[\\/]src[\\/]/,
+      loader: 'ignore-loader'
+    });
+
     return config;
+  },
+  
+  // ✅ NOVO: Tratar firebase-functions como pacote externo
+  experimental: {
+    serverComponentsExternalPackages: ['firebase-functions'],
   },
 };
 
