@@ -24,10 +24,11 @@ interface DashboardData {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  context: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const { userId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { userId } = await context.params;
     
     if (!userId) {
       return NextResponse.json(
@@ -45,7 +46,7 @@ export async function GET(
     // Por enquanto, vamos criar dados mock para conquistas
     // Você pode implementar este método no GamificationEngine depois
     const conquistasRecentes = [
-      { titulo: 'Primeira Semana', descricao: 'Completou 7 dias consecutivos', data: new Date() },
+      { titulo: 'Primeira Semana', descricao: 'Completou 5 dias consecutivos', data: new Date() },
       { titulo: 'Guerreiro', descricao: 'Completou 10 treinos', data: new Date() }
     ];
 
@@ -93,6 +94,7 @@ async function calcularProgressoSemanal(userId: string): Promise<ProgressoSemana
     { dia: 'Sab', pontos: 50 }
   ];
 }
+
 //eslint-disable-next-line
 async function verificarMetasDiarias(userId: string): Promise<MetasDiarias> {
   //eslint-disable-next-line
