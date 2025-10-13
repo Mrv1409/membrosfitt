@@ -41,22 +41,15 @@ const nextConfig: NextConfig = {
         'firebase-admin': 'firebase-admin',
         '@google-cloud/firestore': '@google-cloud/firestore',
         'google-auth-library': 'google-auth-library',
+        'firebase-functions': 'firebase-functions',
       };
     }
 
-    // ✅ NOVO: Ignorar pasta functions no build do Next.js
-    config.module.rules.push({
-      test: /functions[\\/]src[\\/]/,
-      loader: 'ignore-loader'
-    });
-
     return config;
   },
-  
-  // ✅ NOVO: Tratar firebase-functions como pacote externo
-  experimental: {
-    serverComponentsExternalPackages: ['firebase-functions'],
-  },
+
+  serverExternalPackages: ['firebase-functions'],
+
 };
 
 export default nextConfig;
