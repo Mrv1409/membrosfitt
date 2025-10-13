@@ -7,10 +7,11 @@ const db = getFirestore();
 // POST - Participar de um desafio
 export async function POST(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const body = await request.json();
     const { userId, userName, userAvatar } = body;
     
@@ -139,10 +140,11 @@ export async function POST(
 // DELETE - Sair do desafio
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { desafioId: string } }
+  context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    const { desafioId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { desafioId } = await context.params;
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     

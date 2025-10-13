@@ -5,10 +5,11 @@ const gamificationEngine = new GamificationEngine();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  context: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const { userId } = params;
+    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const { userId } = await context.params;
     
     if (!userId) {
       return NextResponse.json(
