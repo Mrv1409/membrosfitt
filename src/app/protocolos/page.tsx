@@ -14,7 +14,7 @@ import {
   X,
   Loader2
 } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, setDoc } from 'firebase/firestore';
 import { app } from '@/lib/firebase';
 import Image from 'next/image';
@@ -64,11 +64,33 @@ export default function ProtocolosPage() {
   const [loading, setLoading] = useState(true);
   const [videosVisiveis, setVideosVisiveis] = useState(VIDEOS_POR_PAGINA);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
+  // ✅ CORREÇÃO: Aguarda autenticação estar pronta antes de buscar dados
   useEffect(() => {
-    fetchVideosAssistidos();
-    fetchVideos();
+    const auth = getAuth(app);
+    
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        console.log('✅ Usuário autenticado:', user.uid);
+        setAuthReady(true);
+      } else {
+        console.log('❌ Usuário não autenticado');
+        setLoading(false);
+        setAuthReady(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  // ✅ Busca vídeos apenas quando auth estiver pronto
+  useEffect(() => {
+    if (authReady) {
+      fetchVideosAssistidos();
+      fetchVideos();
+    }
+  }, [authReady]);
 
   const fetchVideosAssistidos = async () => {
     try {
@@ -86,8 +108,9 @@ export default function ProtocolosPage() {
       });
       
       setVideosAssistidos(ids);
+      console.log('✅ Vídeos assistidos carregados:', ids.size);
     } catch (error) {
-      console.error('Erro ao buscar vídeos assistidos:', error);
+      console.error('❌ Erro ao buscar vídeos assistidos:', error);
     }
   };
 
@@ -95,17 +118,25 @@ export default function ProtocolosPage() {
     try {
       const db = getFirestore(app);
       const videosRef = collection(db, 'protocolos');
+      
+      console.log('🔍 Buscando vídeos da coleção protocolos...');
       const snapshot = await getDocs(videosRef);
+      
+      console.log('📦 Snapshot recebido. Total de documentos:', snapshot.size);
       
       const videosData: Video[] = [];
       snapshot.forEach(doc => {
-        videosData.push({ ...doc.data(), id: doc.id } as Video);
+        const data = doc.data();
+        console.log('📹 Vídeo encontrado:', doc.id, data.titulo);
+        videosData.push({ ...data, id: doc.id } as Video);
       });
       
       setVideos(videosData);
-      console.log('✅ Vídeos carregados:', videosData.length);
+      console.log('✅ Vídeos carregados com sucesso:', videosData.length);
+      console.log('📋 Lista completa:', videosData.map(v => v.titulo));
     } catch (error) {
       console.error('❌ Erro ao buscar vídeos:', error);
+      console.error('Detalhes do erro:', JSON.stringify(error, null, 2));
     } finally {
       setLoading(false);
     }
@@ -142,9 +173,9 @@ export default function ProtocolosPage() {
       setVideosAssistidos(prev => new Set(prev).add(video.id));
       setVideoSelecionado(null);
       
-      console.log(`Video concluído! +${video.pontos} pontos`);
+      console.log(`✅ Video concluído! +${video.pontos} pontos`);
     } catch (error) {
-      console.error('Erro ao marcar vídeo:', error);
+      console.error('❌ Erro ao marcar vídeo:', error);
     }
   };
 
