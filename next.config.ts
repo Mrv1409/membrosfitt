@@ -13,8 +13,8 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  // REMOVA completamente a configuração webpack
-  // REMOVA serverExternalPackages
+  // Apenas isso já resolve na maioria dos casos
+  output: 'standalone',
 };
 
 export default nextConfig;
