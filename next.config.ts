@@ -13,43 +13,8 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        child_process: false,
-        fs: false,
-        net: false,
-        tls: false,
-        crypto: false,
-        stream: false,
-        util: false,
-        url: false,
-        zlib: false,
-        http: false,
-        https: false,
-        assert: false,
-        os: false,
-        path: false,
-        buffer: false,
-        process: false,
-      };
-
-      // Ignora completamente esses módulos no cliente
-      config.externals = {
-        ...config.externals,
-        'firebase-admin': 'firebase-admin',
-        '@google-cloud/firestore': '@google-cloud/firestore',
-        'google-auth-library': 'google-auth-library',
-        'firebase-functions': 'firebase-functions',
-      };
-    }
-
-    return config;
-  },
-
-  serverExternalPackages: ['firebase-functions'],
-
+  // REMOVA completamente a configuração webpack
+  // REMOVA serverExternalPackages
 };
 
 export default nextConfig;
