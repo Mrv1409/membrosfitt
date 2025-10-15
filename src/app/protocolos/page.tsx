@@ -15,8 +15,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, getDocs, doc, setDoc } from 'firebase/firestore';
-import { app } from '@/lib/firebase';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { app, db } from '@/lib/firebase';
 import Image from 'next/image';
 import MenuBottomNav from '@/components/MenuBottomNav';
 
@@ -98,7 +98,6 @@ export default function ProtocolosPage() {
       const user = auth.currentUser;
       if (!user) return;
 
-      const db = getFirestore(app);
       const assistidosRef = collection(db, 'users', user.uid, 'videosAssistidos');
       const snapshot = await getDocs(assistidosRef);
       
@@ -116,7 +115,6 @@ export default function ProtocolosPage() {
 
   const fetchVideos = async () => {
     try {
-      const db = getFirestore(app);
       const videosRef = collection(db, 'protocolos');
       
       console.log('🔍 Buscando vídeos da coleção protocolos...');
@@ -148,8 +146,6 @@ export default function ProtocolosPage() {
       const user = auth.currentUser;
       if (!user) return;
 
-      const db = getFirestore(app);
-      
       await setDoc(doc(db, 'users', user.uid, 'videosAssistidos', video.id), {
         videoId: video.id,
         assistidoEm: new Date(),
