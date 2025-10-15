@@ -13,8 +13,6 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  // REMOVA o output: 'standalone' completamente
-  // Deixe o Next.js decidir automaticamente
 };
 
 export default nextConfig;
