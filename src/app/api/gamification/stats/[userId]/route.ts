@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GamificationEngine } from '@/lib/gamification/engine';
 
-const gamificationEngine = new GamificationEngine();
+// ✅ Lazy initialization
+let gamificationEngine: GamificationEngine | null = null;
+
+function getEngine() {
+  if (!gamificationEngine) {
+    gamificationEngine = new GamificationEngine();
+  }
+  return gamificationEngine;
+}
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ userId: string }> }
 ) {
   try {
-    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const engine = getEngine();
     const { userId } = await context.params;
     
     if (!userId) {
@@ -18,7 +26,7 @@ export async function GET(
       );
     }
 
-    const stats = await gamificationEngine.obterEstatisticas(userId);
+    const stats = await engine.obterEstatisticas(userId);
     
     return NextResponse.json({
       success: true,
@@ -26,11 +34,12 @@ export async function GET(
     });
     
   } catch (error) {
-    console.error('Erro ao buscar estatísticas:', error);
+    console.error('❌ Erro ao buscar estatísticas:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );

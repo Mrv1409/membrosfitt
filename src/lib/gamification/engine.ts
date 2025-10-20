@@ -1,9 +1,13 @@
-import '@/lib/firebase/admin';
-import { getFirestore } from "firebase-admin/firestore";
+import { getAdminDb } from '@/lib/firebase/admin';
 
-const db = getFirestore();
+let db: ReturnType<typeof getAdminDb> | null = null;
 
-
+function getDb() {
+  if (!db) {
+    db = getAdminDb();
+  }
+  return db;
+}
 
 export interface UserGamification {
   userId: string;
@@ -48,7 +52,7 @@ export interface HistoricoPonto {
   timestamp: Date;
   detalhes?: Record<string, number | boolean>;
 }
-//eslint-disable-next-line
+
 interface GamificationResult {
   pontos: number;
   conquistasNovas: Conquista[];
@@ -72,17 +76,17 @@ export class GamificationEngine {
     COMPARTILHAR_CONQUISTA: 30,
     ATIVAR_NOTIFICACOES: 20,
     CONVIDAR_AMIGO: 200,
-    PRIMEIRA_SEMANA: 500, // Bônus especial
-    FIM_DE_SEMANA_OPCIONAL: 50 // Bônus por treinar no fim de semana
+    PRIMEIRA_SEMANA: 500,
+    FIM_DE_SEMANA_OPCIONAL: 50
   };
 
   // Multiplicadores por streak (apenas dias úteis)
   private readonly MULTIPLICADORES_STREAK: StreakMultiplier = {
-    5: 1.5,   // 1 semana útil
-    10: 2.0,  // 2 semanas úteis  
-    20: 2.5,  // 1 mês útil
-    40: 3.0,  // 2 meses úteis
-    60: 3.5   // 3 meses úteis
+    5: 1.5,
+    10: 2.0,
+    20: 2.5,
+    40: 3.0,
+    60: 3.5
   };
 
   // Níveis e requisitos de pontos
@@ -104,9 +108,10 @@ export class GamificationEngine {
     userId: string, 
     acao: keyof typeof this.PONTOS_ACOES, 
     detalhes?: Record<string, number | boolean>
-  ): Promise<{pontos: number, conquistasNovas: Conquista[], nivelMudou: boolean}> {
+  ): Promise<GamificationResult> {
     
-    const userGamificationRef = db.collection('users').doc(userId).collection('gamification').doc('data');
+    const database = getDb();
+    const userGamificationRef = database.collection('users').doc(userId).collection('gamification').doc('data');
     const userGamification = await this.obterDadosGamificacao(userId);
     
     // Calcular pontos base
@@ -164,34 +169,30 @@ export class GamificationEngine {
   /**
    * Processa um treino completo (atualiza streak + pontos)
    */
-  async processarTreinoCompleto(userId: string, isFimDeSemana: boolean = false): Promise<{pontos: number, conquistasNovas: Conquista[], nivelMudou: boolean}> {
+  async processarTreinoCompleto(userId: string, isFimDeSemana: boolean = false): Promise<GamificationResult> {
     const userGamification = await this.obterDadosGamificacao(userId);
     
-    // Verificar se é dia útil ou fim de semana
     const hoje = new Date();
     const ontem = userGamification.ultimoTreino;
     
     let novoStreak = userGamification.streakAtual;
     
     if (!isFimDeSemana) {
-      // Treino em dia útil - conta para streak
       if (this.isSequenciaValida(ontem, hoje)) {
         novoStreak = userGamification.streakAtual + 1;
       } else {
-        novoStreak = 1; // Recomeça streak
+        novoStreak = 1;
       }
     }
-    // Se for fim de semana, streak não muda, mas ganha pontos bônus
     
-    // Atualizar streak no banco
-    const userGamificationRef = db.collection('users').doc(userId).collection('gamification').doc('data');
+    const database = getDb();
+    const userGamificationRef = database.collection('users').doc(userId).collection('gamification').doc('data');
     await userGamificationRef.update({
       streakAtual: novoStreak,
       melhorStreak: Math.max(userGamification.melhorStreak, novoStreak),
       ultimoTreino: hoje
     });
     
-    // Adicionar pontos do treino
     const acao = isFimDeSemana ? 'FIM_DE_SEMANA_OPCIONAL' : 'TREINO_COMPLETO';
     return await this.adicionarPontos(userId, acao, { 
       isFimDeSemana, 
@@ -205,11 +206,11 @@ export class GamificationEngine {
    * Obtém dados de gamificação do usuário
    */
   private async obterDadosGamificacao(userId: string): Promise<UserGamification> {
-    const userGamificationRef = db.collection('users').doc(userId).collection('gamification').doc('data');
+    const database = getDb();
+    const userGamificationRef = database.collection('users').doc(userId).collection('gamification').doc('data');
     const doc = await userGamificationRef.get();
     
     if (!doc.exists) {
-      // Criar dados iniciais
       const dadosIniciais: UserGamification = {
         userId,
         pontos: 0,
@@ -238,10 +239,9 @@ export class GamificationEngine {
    * Calcula multiplicador baseado no streak atual
    */
   private calcularMultiplicadorStreak(streakAtual: number): number {
-    // Encontrar o maior multiplicador aplicável
     const streaksOrdenados = Object.keys(this.MULTIPLICADORES_STREAK)
       .map(Number)
-      .sort((a, b) => b - a); // Ordem decrescente
+      .sort((a, b) => b - a);
     
     for (const streakMinimo of streaksOrdenados) {
       if (streakAtual >= streakMinimo) {
@@ -249,7 +249,7 @@ export class GamificationEngine {
       }
     }
     
-    return 1; // Sem multiplicador
+    return 1;
   }
 
   /**
@@ -273,18 +273,12 @@ export class GamificationEngine {
     const diffMs = dataAtual.getTime() - dataAnterior.getTime();
     const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
-    // Se for 1 dia de diferença, é sequencial
     if (diffDias === 1) return true;
     
-    // Se for fim de semana pelo meio, também é válido
-    // Ex: Sexta -> Segunda (3 dias, mas 1 dia útil)
-    const diaAnterior = dataAnterior.getDay(); // 0=Dom, 6=Sab
+    const diaAnterior = dataAnterior.getDay();
     const diaAtual = dataAtual.getDay();
     
-    // Sexta (5) -> Segunda (1) = válido
     if (diaAnterior === 5 && diaAtual === 1 && diffDias === 3) return true;
-    
-    // Quinta (4) -> Segunda (1) = válido (feriado sexta)
     if (diaAnterior === 4 && diaAtual === 1 && diffDias === 4) return true;
     
     return false;
@@ -303,7 +297,6 @@ export class GamificationEngine {
     const conquistasNovas: Conquista[] = [];
     const conquistasExistentes = userGamification.conquistas.map(c => c.id);
     
-    // CONQUISTAS DE CONSISTÊNCIA (Streaks)
     if (acao === 'TREINO_COMPLETO') {
       const streak = typeof detalhes?.streakAtual === 'number' ? detalhes.streakAtual : 0;
       
@@ -330,7 +323,6 @@ export class GamificationEngine {
       }
     }
 
-    // CONQUISTAS DE VOLUME
     const totalTreinos = userGamification.historicoPontos.filter(h => h.acao === 'TREINO_COMPLETO').length;
     
     const conquistasVolume = [
@@ -361,13 +353,10 @@ export class GamificationEngine {
    * Processa mudança de nível
    */
   private async processarMudancaNivel(userId: string, novoNivel: string): Promise<void> {
-    // Pontos bônus por subir de nível
-    // Tipagem do nível
     type Nivel = keyof typeof this.NIVEIS;
     
-    // Definir bônus para cada nível
     const bonusNivel: Record<Nivel, number> = {
-      'Iniciante': 0,  // Iniciante não tem bônus
+      'Iniciante': 0,
       'Intermediário': 200,
       'Avançado': 500,
       'Elite': 1000,
@@ -375,31 +364,25 @@ export class GamificationEngine {
       'Master': 5000
     };
     
-    // Verificar se o novo nível é válido
     const nivelValido = Object.keys(this.NIVEIS).includes(novoNivel);
     if (!nivelValido) {
       throw new Error(`Nível inválido: ${novoNivel}`);
     }
     
-    // Verificar se já recebeu bônus recentemente
-    const userGamificationRef = db.collection('users').doc(userId).collection('gamification').doc('data');
+    const database = getDb();
+    const userGamificationRef = database.collection('users').doc(userId).collection('gamification').doc('data');
     const userGamification = await userGamificationRef.get();
     const data = userGamification.data() || {};
     const ultimaBonusNivel = data.ultimaBonusNivel || null;
     
-    // Verificar se já recebeu bônus nos últimos 24h
     const podeReceberBonus = !ultimaBonusNivel || 
       new Date(ultimaBonusNivel).getTime() + 24 * 60 * 60 * 1000 < Date.now();
     
-    // Verificar se o nível tem bônus e se pode receber
     const nivelTemBonus = bonusNivel[novoNivel as Nivel];
-    
-    // Adicionar verificação se o nível tem bônus disponível
     const bonusDisponivel = nivelTemBonus > 0;
     
     if (bonusDisponivel && podeReceberBonus) {
-      // Adicionar pontos bônus usando transação para garantir consistência
-      await db.runTransaction(async (transaction) => {
+      await database.runTransaction(async (transaction) => {
         const doc = await transaction.get(userGamificationRef);
         const pontosAtuais = doc.data()?.pontos || 0;
         
@@ -410,7 +393,6 @@ export class GamificationEngine {
       });
     }
 
-    // Desbloquear protocolos baseados no nível
     await this.verificarDesbloqueioProtocolos(userId, novoNivel);
   }
 
@@ -430,23 +412,20 @@ export class GamificationEngine {
     const protocolos = protocolosPorNivel[nivel] ?? [];
     
     if (protocolos.length > 0) {
-      const userGamificationRef = db.collection('users').doc(userId).collection('gamification').doc('data');
+      const database = getDb();
+      const userGamificationRef = database.collection('users').doc(userId).collection('gamification').doc('data');
       
-      // Primeiro obter os protocolos atuais
       const doc = await userGamificationRef.get();
       const data = doc.data() || {};
       const protocolosAtuais = data.protocolosDesbloqueados || [];
-      
       
       type Protocolo = string;
       const novosProtocolos = protocolos.filter((proto: Protocolo) => !protocolosAtuais.includes(proto));
       
       if (novosProtocolos.length > 0) {
-        
-        await db.runTransaction(async (transaction) => {
+        await database.runTransaction(async (transaction) => {
           const doc = await transaction.get(userGamificationRef);
           const protocolosAtuais = doc.data()?.protocolosDesbloqueados || [];
-          
           
           transaction.update(userGamificationRef, {
             protocolosDesbloqueados: [...protocolosAtuais, ...novosProtocolos]
@@ -456,12 +435,12 @@ export class GamificationEngine {
     }
   }
 
-  
   async obterRankingSemanal(limite: number = 100): Promise<Array<{userId: string, pontos: number, posicao: number}>> {
+    const database = getDb();
     const agora = new Date();
     const inicioSemana = new Date(agora.setDate(agora.getDate() - agora.getDay()));
     
-    const snapshot = await db.collectionGroup('gamification')
+    const snapshot = await database.collectionGroup('gamification')
       .where('atualizadoEm', '>=', inicioSemana)
       .orderBy('pontos', 'desc')
       .limit(limite)
@@ -474,7 +453,6 @@ export class GamificationEngine {
     }));
   }
 
-  
   async obterEstatisticas(userId: string): Promise<{
     pontosTotais: number;
     nivel: string;
@@ -516,21 +494,18 @@ export class GamificationEngine {
       }
     }
     
-    return null; // Já é Master
+    return null;
   }
 
   private calcularPontosParaProximoNivel(pontosAtuais: number): number {
     const proximoNivel = this.calcularProximoNivel(pontosAtuais);
     if (!proximoNivel) return 0;
     
-    
     type Nivel = keyof typeof this.NIVEIS;
-    
     
     if (!Object.keys(this.NIVEIS).includes(proximoNivel)) {
       throw new Error(`Nível inválido: ${proximoNivel}`);
     }
-    
     
     const niveisMap: Record<Nivel, number> = {
       'Iniciante': 0,  
@@ -541,7 +516,6 @@ export class GamificationEngine {
       'Master': 100000
     };
 
-    
     const pontosNecessarios = niveisMap[proximoNivel as Nivel];
     
     return pontosNecessarios - pontosAtuais;

@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GamificationEngine } from '@/lib/gamification/engine';
 
-const gamificationEngine = new GamificationEngine();
+// ✅ Lazy initialization
+let gamificationEngine: GamificationEngine | null = null;
+
+function getEngine() {
+  if (!gamificationEngine) {
+    gamificationEngine = new GamificationEngine();
+  }
+  return gamificationEngine;
+}
 
 interface ProgressoSemanal {
   dia: string;
@@ -27,7 +35,7 @@ export async function GET(
   context: { params: Promise<{ userId: string }> }
 ) {
   try {
-    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const engine = getEngine();
     const { userId } = await context.params;
     
     if (!userId) {
@@ -39,8 +47,8 @@ export async function GET(
 
     // Buscar dados em paralelo para performance
     const [stats, ranking] = await Promise.all([
-      gamificationEngine.obterEstatisticas(userId),
-      gamificationEngine.obterRankingSemanal(10)
+      engine.obterEstatisticas(userId),
+      engine.obterRankingSemanal(10)
     ]);
 
     // Por enquanto, vamos criar dados mock para conquistas
@@ -64,25 +72,25 @@ export async function GET(
     });
     
   } catch (error) {
-    console.error('Erro ao buscar dados do dashboard:', error);
+    console.error('❌ Erro ao buscar dados do dashboard:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );
   }
 }
-
 //eslint-disable-next-line
 async function calcularProgressoSemanal(userId: string): Promise<ProgressoSemanal[]> {
-  // Implementar lógica para progresso dos últimos 7 dias
-  const hoje = new Date();
-  //eslint-disable-next-line
+  // TODO: Implementar lógica real para progresso dos últimos 7 dias
+  // Por enquanto retorna dados mock
+  const hoje = new Date();//eslint-disable-next-line
   const semanaPassada = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
   
-  // Buscar pontos por dia da semana
+  // Buscar pontos por dia da semana do Firestore
   // Esta é uma versão simplificada - você pode expandir
   return [
     { dia: 'Dom', pontos: 0 },
@@ -94,7 +102,6 @@ async function calcularProgressoSemanal(userId: string): Promise<ProgressoSemana
     { dia: 'Sab', pontos: 50 }
   ];
 }
-
 //eslint-disable-next-line
 async function verificarMetasDiarias(userId: string): Promise<MetasDiarias> {
   //eslint-disable-next-line

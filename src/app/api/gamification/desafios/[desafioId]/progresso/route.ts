@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GamificationEngine } from '@/lib/gamification/engine';
 import { DesafiosManager } from '@/lib/gamification/desafios';
-//eslint-disable-next-line
-const gamificationEngine = new GamificationEngine();
-const desafiosManager = new DesafiosManager(); 
 
+// ✅ Lazy initialization
+let gamificationEngine: GamificationEngine | null = null;
+let desafiosManager: DesafiosManager | null = null;
+//eslint-disable-next-line
+function getEngine() {
+  if (!gamificationEngine) {
+    gamificationEngine = new GamificationEngine();
+  }
+  return gamificationEngine;
+}
+
+function getDesafiosManager() {
+  if (!desafiosManager) {
+    desafiosManager = new DesafiosManager();
+  }
+  return desafiosManager;
+}
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const manager = getDesafiosManager();
     const { desafioId } = await context.params;
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
@@ -23,7 +37,7 @@ export async function GET(
       );
     }
 
-    const progresso = await desafiosManager.obterProgressoUsuario(desafioId, userId);
+    const progresso = await manager.obterProgressoUsuario(desafioId, userId);
     
     return NextResponse.json({
       success: true,
@@ -31,24 +45,24 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error('Erro ao buscar progresso:', error);
+    console.error('❌ Erro ao buscar progresso:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );
   }
 }
 
-
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ desafioId: string }> }
 ) {
   try {
-    // ✅ MUDANÇA PARA NEXT.JS 15: params agora é uma Promise
+    const manager = getDesafiosManager();
     const { desafioId } = await context.params;
     const body = await request.json();
     const { userId, valor, acao, descricao } = body;
@@ -60,8 +74,7 @@ export async function POST(
       );
     }
 
-    
-    const progressoAtualizado = await desafiosManager.atualizarProgresso(
+    const progressoAtualizado = await manager.atualizarProgresso(
       desafioId, 
       userId, 
       valor, 
@@ -69,13 +82,13 @@ export async function POST(
       descricao || 'Progresso atualizado'
     );
 
-    
-    if (progressoAtualizado?.metaAtingida) { 
-      //eslint-disable-next-line
-      const desafio = await desafiosManager.obterDesafio(desafioId);
+    // Se meta atingida, pode adicionar lógica de recompensa aqui
+    if (progressoAtualizado?.metaAtingida) {//eslint-disable-next-line
+      const desafio = await manager.obterDesafio(desafioId);
       
-      
-      
+      // TODO: Adicionar pontos de recompensa via GamificationEngine
+      // const engine = getEngine();
+      // await engine.adicionarPontos(userId, 'DESAFIO_COMPLETO', { desafioId });
     }
 
     return NextResponse.json({
@@ -87,11 +100,12 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Erro ao atualizar progresso:', error);
+    console.error('❌ Erro ao atualizar progresso:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );

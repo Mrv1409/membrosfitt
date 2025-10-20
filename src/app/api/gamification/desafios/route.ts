@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GamificationEngine } from '@/lib/gamification/engine';
 import { DesafiosManager } from '@/lib/gamification/desafios'; 
-import { db } from '@/lib/firebase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 
+// ✅ Lazy initialization
+let gamificationEngine: GamificationEngine | null = null;
+let desafiosManager: DesafiosManager | null = null;
+let db: ReturnType<typeof getAdminDb> | null = null;
 //eslint-disable-next-line
-const gamificationEngine = new GamificationEngine();
+function getEngine() {
+  if (!gamificationEngine) {
+    gamificationEngine = new GamificationEngine();
+  }
+  return gamificationEngine;
+}
 //eslint-disable-next-line
-const desafiosManager = new DesafiosManager(); 
+function getDesafiosManager() {
+  if (!desafiosManager) {
+    desafiosManager = new DesafiosManager();
+  }
+  return desafiosManager;
+}
+
+function getDb() {
+  if (!db) {
+    db = getAdminDb();
+  }
+  return db;
+}
 
 // Interfaces para tipagem correta
 interface Objetivo {
@@ -47,20 +68,21 @@ interface DesafioData {
   participantes?: string[];
   ranking?: unknown[];
   totalParticipantes?: number;
-  meuProgresso?: ProgressoUsuario; // ✅ Propriedade adicionada
+  meuProgresso?: ProgressoUsuario; 
   [key: string]: unknown;
 }
 
 // GET - Listar desafios ativos
 export async function GET(request: NextRequest) {
   try {
+    const database = getDb();
     const { searchParams } = new URL(request.url);
     const mes = searchParams.get('mes');
     const semana = searchParams.get('semana');
     const tipo = searchParams.get('tipo');
     const userId = searchParams.get('userId');
 
-    let desafiosQuery = db.collection('desafios')
+    let desafiosQuery = database.collection('desafios')
       .where('ativo', '==', true)
       .orderBy('dataInicio', 'desc');
 
@@ -78,14 +100,13 @@ export async function GET(request: NextRequest) {
     }
 
     const snapshot = await desafiosQuery.get();
-    const desafios: DesafioData[] = []; // ✅ Tipagem do array
+    const desafios: DesafioData[] = [];
 
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
-      const desafio: DesafioData = { // ✅ Tipagem correta
+      const desafio: DesafioData = { 
         id: docSnap.id,
         ...data,
-        // Converter Timestamps para Date
         dataInicio: data.dataInicio?.toDate?.() || data.dataInicio || null,
         dataFim: data.dataFim?.toDate?.() || data.dataFim || null,
         created: data.created?.toDate?.() || data.created || null,
@@ -94,20 +115,20 @@ export async function GET(request: NextRequest) {
       // Se userId fornecido, buscar progresso do usuário
       if (userId) {
         try {
-          const progressoDoc = await db
+          const progressoDoc = await database
             .collection('progressos-desafios')
             .doc(`${docSnap.id}_${userId}`)
             .get();
           
           if (progressoDoc.exists) {
             const progressoData = progressoDoc.data();
-            desafio.meuProgresso = { // ✅ Agora funciona!
+            desafio.meuProgresso = { 
               ...progressoData,
               ultimaAtualizacao: progressoData?.ultimaAtualizacao?.toDate?.() || progressoData?.ultimaAtualizacao || null,
             };
           }
         } catch (error) {
-          console.error('Erro ao buscar progresso:', error);
+          console.error('❌ Erro ao buscar progresso:', error);
         }
       }
 
@@ -121,11 +142,12 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar desafios:', error);
+    console.error('❌ Erro ao buscar desafios:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );
@@ -135,6 +157,7 @@ export async function GET(request: NextRequest) {
 // POST - Criar novo desafio (admin only)
 export async function POST(request: NextRequest) {
   try {
+    const database = getDb();
     const body = await request.json();
     
     // Validações básicas
@@ -154,7 +177,7 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const dataInicio = new Date(now.getFullYear(), mes - 1, (semana - 1) * 7 + 1);
     const dataFim = new Date(dataInicio);
-    dataFim.setDate(dataFim.getDate() + 6); // 7 dias de duração
+    dataFim.setDate(dataFim.getDate() + 6);
 
     const novoDesafio = {
       id: desafioId,
@@ -185,13 +208,12 @@ export async function POST(request: NextRequest) {
     };
 
     // Salvar no Firestore
-    await db.collection('desafios').doc(desafioId).set(novoDesafio);
+    await database.collection('desafios').doc(desafioId).set(novoDesafio);
 
     return NextResponse.json({
       success: true,
       data: {
         ...novoDesafio,
-        // Converter para strings ISO
         dataInicio: dataInicio.toISOString(),
         dataFim: dataFim.toISOString(),
         created: now.toISOString()
@@ -200,11 +222,12 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erro ao criar desafio:', error);
+    console.error('❌ Erro ao criar desafio:', error);
     return NextResponse.json(
       { 
         error: 'Erro interno do servidor',
-        success: false 
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       },
       { status: 500 }
     );

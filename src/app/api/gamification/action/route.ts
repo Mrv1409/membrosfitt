@@ -1,39 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GamificationEngine } from '@/lib/gamification/engine';
 
-// ⚠️ GAMIFICAÇÃO TEMPORARIAMENTE DESABILITADA
-// Esta API retorna sucesso sem processar nada para não quebrar o build
+// ✅ Inicializa engine apenas quando necessário
+let gamificationEngine: GamificationEngine | null = null;
+
+function getEngine() {
+  if (!gamificationEngine) {
+    gamificationEngine = new GamificationEngine();
+  }
+  return gamificationEngine;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const { userId, acao, detalhes } = body;
     
-    // Log para debug (opcional)
-    console.log('📊 Gamificação/Action desabilitada - Dados recebidos:', {
-      userId: body.userId,
-      acao: body.acao
-    });
+    if (!userId || !acao) {
+      return NextResponse.json(
+        { 
+          error: 'UserId e ação são obrigatórios',
+          success: false 
+        },
+        { status: 400 }
+      );
+    }
+
+    const engine = getEngine();
+    let resultado;
     
-    // Retorna sucesso sem fazer nada
-    return NextResponse.json({ 
+    // Tratar ação específica de treino
+    if (acao === 'TREINO_COMPLETO') {
+      const isFimDeSemana = detalhes?.isFimDeSemana || false;
+      resultado = await engine.processarTreinoCompleto(userId, isFimDeSemana);
+    } else {
+      resultado = await engine.adicionarPontos(userId, acao, detalhes);
+    }
+    
+    return NextResponse.json({
       success: true,
-      message: 'Gamificação temporariamente desabilitada',
-      pontos: 0,
-      nivel: 1,
-      progresso: 0
+      data: resultado,
+      message: `+${resultado.pontos} pontos!`
     });
     
   } catch (error) {
-    console.error('Erro na API de gamificação/action:', error);
-    return NextResponse.json({ 
-      success: true, // Retorna sucesso mesmo com erro
-      message: 'Gamificação temporariamente desabilitada' 
-    });
+    console.error('❌ Erro ao processar ação:', error);
+    return NextResponse.json(
+      { 
+        error: 'Erro interno do servidor',
+        success: false,
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
+      },
+      { status: 500 }
+    );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({ 
-    status: 'disabled',
-    message: 'Gamificação/Action temporariamente desabilitada' 
-  });
 }
