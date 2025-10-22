@@ -109,6 +109,27 @@ function converterValor(valor: unknown): number {
   return 0;
 }
 
+// 🔥 FUNÇÃO COM TIMEOUT PARA FETCH
+async function fetchComTimeout(url: string, options: RequestInit, timeoutMs: number = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if ((error as Error).name === 'AbortError') {
+      throw new Error(`Timeout: Requisição excedeu ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
 export async function POST(req: Request) {
   console.log("🚀 Iniciando geração de plano com especialistas...");
 
@@ -243,14 +264,14 @@ export async function POST(req: Request) {
       altura: profile.height
     });
 
-    // 🚀 CHAMAR AMBAS IAS ESPECIALIZADAS EM PARALELO
-    console.log("🎯 Iniciando geração paralela com especialistas...");
+    // 🚀 CHAMAR AMBAS IAS ESPECIALIZADAS EM PARALELO COM TIMEOUT
+    console.log("🎯 Iniciando geração paralela com especialistas (timeout: 8s)...");
 
     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
 
     const [resultadoTreino, resultadoNutricao] = await Promise.allSettled([
-      // IA Personal Trainer (120B)
-      fetch(`${baseUrl}/api/gerar-plano-treino`, {
+      // IA Personal Trainer
+      fetchComTimeout(`${baseUrl}/api/gerar-plano-treino`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
@@ -261,10 +282,10 @@ export async function POST(req: Request) {
           diasTreino: profile.weekly_activities,
           metaCalorica
         })
-      }),
+      }, 8000), // 8 segundos de timeout
       
-      // IA Nutricionista (20B)  
-      fetch(`${baseUrl}/api/gerar-plano-nutricao`, {
+      // IA Nutricionista
+      fetchComTimeout(`${baseUrl}/api/gerar-plano-nutricao`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
@@ -274,46 +295,43 @@ export async function POST(req: Request) {
           userData: profile,
           metaCalorica
         })
-      })
+      }, 8000) // 8 segundos de timeout
     ]);
 
     // ✅ PROCESSAR RESULTADOS
     let planoTreino, planoNutricao;
 
-// Processar IA Treino
-if (resultadoTreino.status === 'fulfilled') {
-  if (resultadoTreino.value.ok) {
-    const data = await resultadoTreino.value.json();
-    planoTreino = data.planoTreino;
-    console.log("✅ IA Treino - Plano gerado com sucesso");
-  } else {
-    const errorText = await resultadoTreino.value.text();
-    console.error("❌ IA Treino falhou - Status:", resultadoTreino.value.status, "Erro:", errorText);
-    throw new Error("Falha na geração do plano de treino");
-  }
-} else {
-  // resultadoTreino.status === 'rejected'
-  console.error("❌ IA Treino falhou - Promise rejeitada:", resultadoTreino.reason);
-  throw new Error("Falha na geração do plano de treino");
-}
+    // Processar IA Treino
+    if (resultadoTreino.status === 'fulfilled') {
+      if (resultadoTreino.value.ok) {
+        const data = await resultadoTreino.value.json();
+        planoTreino = data.planoTreino;
+        console.log("✅ IA Treino - Plano gerado com sucesso");
+      } else {
+        const errorText = await resultadoTreino.value.text();
+        console.error("❌ IA Treino falhou - Status:", resultadoTreino.value.status, "Erro:", errorText);
+        throw new Error("Falha na geração do plano de treino");
+      }
+    } else {
+      console.error("❌ IA Treino falhou - Promise rejeitada:", resultadoTreino.reason);
+      throw new Error("Falha na geração do plano de treino");
+    }
 
-// Processar IA Nutrição
-if (resultadoNutricao.status === 'fulfilled') {
-  if (resultadoNutricao.value.ok) {
-    const data = await resultadoNutricao.value.json();
-    planoNutricao = data.planoNutricao;
-    console.log("✅ IA Nutrição - Plano gerado com sucesso");
-  } else {
-    const errorText = await resultadoNutricao.value.text();
-    console.error("❌ IA Nutrição falhou - Status:", resultadoNutricao.value.status, "Erro:", errorText);
-    throw new Error("Falha na geração do plano nutricional");
-  }
-
-  } else {
-  // resultadoNutricao.status === 'rejected'
-  console.error("❌ IA Nutrição falhou - Promise rejeitada:", resultadoNutricao.reason);
-  throw new Error("Falha na geração do plano nutricional");
-  }
+    // Processar IA Nutrição
+    if (resultadoNutricao.status === 'fulfilled') {
+      if (resultadoNutricao.value.ok) {
+        const data = await resultadoNutricao.value.json();
+        planoNutricao = data.planoNutricao;
+        console.log("✅ IA Nutrição - Plano gerado com sucesso");
+      } else {
+        const errorText = await resultadoNutricao.value.text();
+        console.error("❌ IA Nutrição falhou - Status:", resultadoNutricao.value.status, "Erro:", errorText);
+        throw new Error("Falha na geração do plano nutricional");
+      }
+    } else {
+      console.error("❌ IA Nutrição falhou - Promise rejeitada:", resultadoNutricao.reason);
+      throw new Error("Falha na geração do plano nutricional");
+    }
 
     // 🎯 MONTAR PLANO COMPLETO
     const planoCompleto: PlanoGerado = {
@@ -347,8 +365,8 @@ if (resultadoNutricao.status === 'fulfilled') {
       metadata: {
         criadoEm: new Date(),
         tmb: Math.round(tmb),
-        modelo: "ESPECIALISTAS_IA",
-        provider: "groq-especializado",
+        modelo: "LLAMA_ESPECIALISTAS",
+        provider: "groq-llama",
         tentativas: 1,
         dadosUsuario: {
           peso: profile.weight,
@@ -373,7 +391,7 @@ if (resultadoNutricao.status === 'fulfilled') {
         id: planoId,
         metaCalorica: metaCalorica,
         message: "Plano gerado com sucesso por especialistas IA!",
-        modeloUsado: "ESPECIALISTAS_IA",
+        modeloUsado: "LLAMA_ESPECIALISTAS",
         tentativas: 1,
         redirectUrl: `/dashboard/plano/${planoId}`
       });

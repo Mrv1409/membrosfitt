@@ -46,7 +46,6 @@ function limparJSON(jsonString: string): string {
     .trim();
 
   // 🔥 CORREÇÃO DE ASPAS FALTANTES (problema comum do Llama)
-  // Padrão: "chave": valor sem aspas (deve ser "chave": "valor")
   cleaned = cleaned.replace(
     /("(?:alimento|quantidade|tipo|horario|descanso|observacoes)":\s*)([^",{\[\s][^,}\]]*?)(\s*[,}\]])/g,
     '$1"$2"$3'
@@ -65,7 +64,6 @@ function limparJSON(jsonString: string): string {
   if (end === -1 || end < start) {
     console.warn("⚠️ JSON incompleto detectado, tentando fechar...");
     
-    // Contar chaves abertas vs fechadas
     let openBraces = 0;
     let closeBraces = 0;
     
@@ -74,7 +72,6 @@ function limparJSON(jsonString: string): string {
       if (cleaned[i] === '}') closeBraces++;
     }
     
-    // Adicionar chaves faltantes
     const missingBraces = openBraces - closeBraces;
     if (missingBraces > 0) {
       cleaned += '}'.repeat(missingBraces);
@@ -91,6 +88,47 @@ function limparJSON(jsonString: string): string {
   }
 
   return cleaned.slice(start, end);
+}
+
+// 🔥 FUNÇÃO COM FALLBACK AUTOMÁTICO
+async function gerarPlanoComFallback(prompt: string): Promise<string> {
+  const modelos = [
+    { nome: "llama-3.3-70b-versatile", descricao: "Principal" },
+    { nome: "llama-3.1-8b-instant", descricao: "Backup" }
+  ];
+
+  for (const modelo of modelos) {
+    try {
+      console.log(`🤖 Tentando com ${modelo.nome} (${modelo.descricao})...`);
+      
+      const response = await groq.chat.completions.create({
+        model: modelo.nome,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 5000,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error("Resposta vazia da IA");
+      }
+
+      console.log(`✅ ${modelo.nome} respondeu com sucesso`);
+      return content;
+
+    } catch (error) {
+      console.error(`❌ ${modelo.nome} falhou:`, error);
+      
+      if (modelo === modelos[modelos.length - 1]) {
+        throw error;
+      }
+      
+      console.log(`🔄 Tentando próximo modelo...`);
+    }
+  }
+
+  throw new Error("Todos os modelos falharam");
 }
 
 export async function POST(req: Request) {
@@ -122,100 +160,64 @@ export async function POST(req: Request) {
       gordurasAlvo = Math.round(pesoKg * 1.0);
     }
 
-    // 🎯 PROMPT QUALIFICADO E PERSONALIZADO
+    // 🎯 PROMPT QUALIFICADO E PERSONALIZADO (MANTENDO ESPECIFICIDADE)
     const prompt = `Você é um NUTRICIONISTA ESPORTIVO brasileiro especializado em nutrição personalizada.
 
 PERFIL DO CLIENTE:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 Nome: ${userData.name}
-⚖️ Peso atual: ${userData.weight}kg | Meta: ${userData.weight_goal}kg
-📏 Altura: ${userData.height}cm
-🎯 OBJETIVO PRINCIPAL: ${userData.goal.toUpperCase()}
-🧬 Biotipo: ${userData.biotype}
-🏃 Nível de atividade: ${userData.activity_level}
-💪 Treinos por semana: ${userData.weekly_activities}x
-${userData.dietary_restrictions.length > 0 ? `🚫 RESTRIÇÕES ALIMENTARES: ${userData.dietary_restrictions.join(', ')}` : '✅ Sem restrições alimentares'}
+Nome: ${userData.name}
+Peso atual: ${userData.weight}kg | Meta: ${userData.weight_goal}kg
+Altura: ${userData.height}cm
+OBJETIVO PRINCIPAL: ${userData.goal.toUpperCase()}
+Biotipo: ${userData.biotype}
+Nível de atividade: ${userData.activity_level}
+Treinos por semana: ${userData.weekly_activities}x
+${userData.dietary_restrictions.length > 0 ? `RESTRIÇÕES ALIMENTARES: ${userData.dietary_restrictions.join(', ')}` : 'Sem restrições alimentares'}
 
 PRESCRIÇÃO NUTRICIONAL CALCULADA:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 Meta Calórica: ${metaCalorica} kcal/dia
-🥩 Proteínas: ${proteinasAlvo}g/dia (${Math.round(proteinasAlvo/pesoKg * 10)/10}g/kg)
-🍚 Carboidratos: ${carboidratosAlvo}g/dia (${Math.round(carboidratosAlvo/pesoKg * 10)/10}g/kg)
-🥑 Gorduras: ${gordurasAlvo}g/dia (${Math.round(gordurasAlvo/pesoKg * 10)/10}g/kg)
+Meta Calórica: ${metaCalorica} kcal/dia
+Proteínas: ${proteinasAlvo}g/dia (${Math.round(proteinasAlvo/pesoKg * 10)/10}g/kg)
+Carboidratos: ${carboidratosAlvo}g/dia (${Math.round(carboidratosAlvo/pesoKg * 10)/10}g/kg)
+Gorduras: ${gordurasAlvo}g/dia (${Math.round(gordurasAlvo/pesoKg * 10)/10}g/kg)
 
 ESTRATÉGIA PARA ${userData.goal.toUpperCase()}:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${userData.goal === 'hipertrofia' ? 
-`• SUPERÁVIT CALÓRICO moderado para construir massa
-• Proteína ALTA distribuída em todas as refeições
-• Carboidratos ALTOS para energia e anabolismo
-• Timing: Proteína + Carbo PRÉ e PÓS treino
-• Foco: Recuperação muscular e crescimento` :
+`SUPERÁVIT CALÓRICO moderado para construir massa. Proteína ALTA distribuída em todas as refeições. Carboidratos ALTOS para energia e anabolismo. Timing: Proteína + Carbo PRÉ e PÓS treino. Foco: Recuperação muscular e crescimento.` :
 userData.goal === 'emagrecimento' ?
-`• DÉFICIT CALÓRICO controlado preservando músculo
-• Proteína MUITO ALTA para saciedade e preservação muscular
-• Carboidratos MODERADOS focados em horários estratégicos
-• Gorduras controladas mas essenciais
-• Foco: Perda de gordura mantendo massa magra` :
+`DÉFICIT CALÓRICO controlado preservando músculo. Proteína MUITO ALTA para saciedade e preservação muscular. Carboidratos MODERADOS focados em horários estratégicos. Gorduras controladas mas essenciais. Foco: Perda de gordura mantendo massa magra.` :
 userData.goal === 'força' ?
-`• Calorias adequadas para performance máxima
-• Proteína ALTA para recuperação
-• Carboidratos ALTOS para energia em treinos pesados
-• Timing: Carbo antes de treinos intensos
-• Foco: Combustível para força explosiva` :
-`• Manutenção calórica e composição corporal
-• Macros balanceados
-• Foco: Saúde e performance sustentável`}
+`Calorias adequadas para performance máxima. Proteína ALTA para recuperação. Carboidratos ALTOS para energia em treinos pesados. Timing: Carbo antes de treinos intensos. Foco: Combustível para força explosiva.` :
+`Manutenção calórica e composição corporal. Macros balanceados. Foco: Saúde e performance sustentável.`}
 
 BIOTIPO ${userData.biotype.toUpperCase()} - CONSIDERAÇÕES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${userData.biotype === 'ectomorfo' ? 
-`• Metabolismo ACELERADO - precisa alta densidade calórica
-• PRIORIZE: Alimentos calóricos, shakes, smoothies, oleaginosas
-• CARBOIDRATOS: Não tenha medo, são seus aliados
-• DICA: Adicione azeite, pasta de amendoim, granola` :
+`Metabolismo ACELERADO - precisa alta densidade calórica. PRIORIZE: Alimentos calóricos, shakes, smoothies, oleaginosas. CARBOIDRATOS: Não tenha medo, são seus aliados. DICA: Adicione azeite, pasta de amendoim, granola.` :
 userData.biotype === 'mesomorfo' ?
-`• Metabolismo BALANCEADO - responde bem a dietas estruturadas
-• PRIORIZE: Variedade, alimentos integrais, equilíbrio
-• FLEXIBILIDADE: Pode alternar macros conforme necessidade
-• DICA: Aproveite a versatilidade do seu corpo` :
-`• Metabolismo LENTO - precisa controle de calorias e carbo
-• PRIORIZE: Vegetais volumosos, proteínas magras, fibras
-• CARBOIDRATOS: Estratégicos, integrais, pré-treino
-• DICA: Refeições volumosas com baixa densidade calórica`}
+`Metabolismo BALANCEADO - responde bem a dietas estruturadas. PRIORIZE: Variedade, alimentos integrais, equilíbrio. FLEXIBILIDADE: Pode alternar macros conforme necessidade. DICA: Aproveite a versatilidade do seu corpo.` :
+`Metabolismo LENTO - precisa controle de calorias e carbo. PRIORIZE: Vegetais volumosos, proteínas magras, fibras. CARBOIDRATOS: Estratégicos, integrais, pré-treino. DICA: Refeições volumosas com baixa densidade calórica.`}
 
 ${userData.dietary_restrictions.length > 0 ? `
 ADAPTAÇÕES PARA RESTRIÇÕES (${userData.dietary_restrictions.join(', ')}):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${gerarSubstituicoesPorRestricao(userData.dietary_restrictions)}
 ` : ''}
 
 DIRETRIZES CRÍTICAS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ ALIMENTOS ACESSÍVEIS: Supermercados brasileiros comuns (não importados caros)
-✅ VARIEDADE OBRIGATÓRIA: CADA DIA DEVE TER COMBINAÇÕES DIFERENTES
-✅ REALISMO: Comida de verdade que brasileiros comem (arroz, feijão, frango, ovos, frutas locais)
-✅ CÁLCULOS PRECISOS: Macros e calorias devem bater com os totais diários
-✅ ${userData.meals_day} REFEIÇÕES/DIA distribuídas equilibradamente
+1. ALIMENTOS ACESSÍVEIS: Supermercados brasileiros comuns (não importados caros)
+2. VARIEDADE OBRIGATÓRIA: CADA DIA DEVE TER COMBINAÇÕES DIFERENTES
+3. REALISMO: Comida de verdade que brasileiros comem (arroz, feijão, frango, ovos, frutas locais)
+4. CÁLCULOS PRECISOS: Macros e calorias devem bater com os totais diários
+5. ${userData.meals_day} REFEIÇÕES/DIA distribuídas equilibradamente
+${userData.dietary_restrictions.length > 0 ? `6. PROIBIDO: ${userData.dietary_restrictions.map((r: string) => r.toUpperCase()).join(', ')}` : ''}
 
-ALIMENTOS PROIBIDOS/SUBSTITUIR:
-${userData.dietary_restrictions.length > 0 ? 
-`❌ ${userData.dietary_restrictions.map((r: string) => r.toUpperCase()).join(', ')}` : 
-'✅ Sem restrições'}
-
-EXEMPLOS DE ALIMENTOS ACESSÍVEIS NO BRASIL:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🥩 Proteínas: Frango (peito/coxa), ovos, atum enlatado, carne moída, tilápia, sardinha, iogurte grego
-🍚 Carboidratos: Arroz (branco/integral), batata doce/inglesa, macarrão integral, aveia, pão integral, tapioca, frutas locais
-🥑 Gorduras: Azeite de oliva, abacate, pasta de amendoim, castanhas do Pará, ovo inteiro
-🥗 Vegetais: Brócolis, couve, tomate, alface, cenoura, abobrinha, chuchu
+ALIMENTOS ACESSÍVEIS NO BRASIL:
+Proteínas: Frango (peito/coxa), ovos, atum enlatado, carne moída, tilápia, sardinha, iogurte grego
+Carboidratos: Arroz (branco/integral), batata doce/inglesa, macarrão integral, aveia, pão integral, tapioca, frutas locais
+Gorduras: Azeite de oliva, abacate, pasta de amendoim, castanhas do Pará, ovo inteiro
+Vegetais: Brócolis, couve, tomate, alface, cenoura, abobrinha, chuchu
 
 ESTRUTURA ${userData.meals_day} REFEIÇÕES:
 ${gerarEstruturaRefeicoes(userData.meals_day)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RETORNE APENAS O JSON VÁLIDO (sem texto adicional):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {
   "metaCalorica": ${metaCalorica},
@@ -250,20 +252,10 @@ RETORNE APENAS O JSON VÁLIDO (sem texto adicional):
 IMPORTANTE: Gere APENAS os 5 dias úteis (monday a friday). Não inclua saturday e sunday.
 GERE O PLANO COMPLETO PARA OS 5 DIAS COM VARIEDADE E CRIATIVIDADE.`;
 
-    console.log("📤 Enviando requisição para Llama 3.3 70B...");
+    console.log("📤 Enviando requisição com sistema de fallback...");
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 5000,
-    });
-
-    const content = response.choices[0]?.message?.content;
-    
-    if (!content) {
-      throw new Error("Resposta vazia da IA");
-    }
+    // 🔥 USAR FUNÇÃO COM FALLBACK
+    const content = await gerarPlanoComFallback(prompt);
 
     console.log("📝 Resposta recebida (primeiros 300 chars):", content.substring(0, 300));
 
@@ -321,30 +313,30 @@ GERE O PLANO COMPLETO PARA OS 5 DIAS COM VARIEDADE E CRIATIVIDADE.`;
 
 function gerarEstruturaRefeicoes(mealsDay: number) {
   const estruturas = {
-    3: ["☀️ Café da manhã (07:00)", "🌞 Almoço (12:00)", "🌙 Jantar (19:00)"],
-    4: ["☀️ Café da manhã (07:00)", "🌞 Almoço (12:00)", "🍎 Lanche da tarde (16:00)", "🌙 Jantar (19:00)"],
-    5: ["☀️ Café da manhã (07:00)", "🥤 Lanche da manhã (10:00)", "🌞 Almoço (13:00)", "🍎 Lanche da tarde (16:00)", "🌙 Jantar (19:00)"],
-    6: ["☀️ Café da manhã (07:00)", "🥤 Lanche da manhã (10:00)", "🌞 Almoço (12:30)", "🍎 Lanche da tarde (15:30)", "🌙 Jantar (18:30)", "🌜 Ceia (21:00)"]
+    3: ["Café da manhã (07:00)", "Almoço (12:00)", "Jantar (19:00)"],
+    4: ["Café da manhã (07:00)", "Almoço (12:00)", "Lanche da tarde (16:00)", "Jantar (19:00)"],
+    5: ["Café da manhã (07:00)", "Lanche da manhã (10:00)", "Almoço (13:00)", "Lanche da tarde (16:00)", "Jantar (19:00)"],
+    6: ["Café da manhã (07:00)", "Lanche da manhã (10:00)", "Almoço (12:30)", "Lanche da tarde (15:30)", "Jantar (18:30)", "Ceia (21:00)"]
   };
 
-  return estruturas[mealsDay as keyof typeof estruturas]?.map(refeicao => refeicao).join('\n') || "3 refeições básicas";
+  return estruturas[mealsDay as keyof typeof estruturas]?.join(', ') || "3 refeições básicas";
 }
 
 function gerarSubstituicoesPorRestricao(restricoes: string[]): string {
   const substituicoes: Record<string, string> = {
-    'glúten': '→ Arroz, batata, tapioca, mandioca, quinoa, polvilho, macarrão de arroz',
-    'lactose': '→ Leite de soja/amêndoa/coco, iogurte vegetal, queijo vegano, creme de leite de coco',
-    'frutos-do-mar': '→ Frango, carne bovina, porco, ovos, leguminosas (feijão, lentilha, grão de bico)',
-    'vegetariano': '→ Ovos, laticínios, leguminosas, tofu, queijos, iogurtes',
-    'vegano': '→ Leguminosas, tofu, tempeh, seitan, leites vegetais, proteína de soja texturizada (PTS)',
-    'diabético': '→ Carboidratos integrais, baixo índice glicêmico, fibras, evitar açúcar refinado',
-    'hipertensão': '→ Low-sodium, ervas frescas, especiarias, limão, alho, evitar sal refinado',
-    'oleaginosas': '→ Sementes (chia, linhaça, girassol), abacate, azeite de oliva',
-    'soja': '→ Ervilha proteica, lentilha, grão de bico, feijão, quinoa'
+    'glúten': 'Arroz, batata, tapioca, mandioca, quinoa, polvilho, macarrão de arroz',
+    'lactose': 'Leite de soja/amêndoa/coco, iogurte vegetal, queijo vegano, creme de leite de coco',
+    'frutos-do-mar': 'Frango, carne bovina, porco, ovos, leguminosas (feijão, lentilha, grão de bico)',
+    'vegetariano': 'Ovos, laticínios, leguminosas, tofu, queijos, iogurtes',
+    'vegano': 'Leguminosas, tofu, tempeh, seitan, leites vegetais, proteína de soja texturizada (PTS)',
+    'diabético': 'Carboidratos integrais, baixo índice glicêmico, fibras, evitar açúcar refinado',
+    'hipertensão': 'Low-sodium, ervas frescas, especiarias, limão, alho, evitar sal refinado',
+    'oleaginosas': 'Sementes (chia, linhaça, girassol), abacate, azeite de oliva',
+    'soja': 'Ervilha proteica, lentilha, grão de bico, feijão, quinoa'
   };
 
   return restricoes.map(r => {
     const restricaoLower = r.toLowerCase();
-    return substituicoes[restricaoLower] || `→ Consulte nutricionista para ${r}`;
-  }).join('\n');
+    return substituicoes[restricaoLower] || `Consulte nutricionista para ${r}`;
+  }).join('. ');
 }

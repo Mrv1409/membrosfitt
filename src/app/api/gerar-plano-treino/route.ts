@@ -37,60 +37,104 @@ const PlanoTreinoSchema = z.object({
   semana: z.record(z.string().min(1, "Chave do dia da semana não pode ser vazia."), PlanoTreinoDiaSchema),
 });
 
+// 🔥 FUNÇÃO COM FALLBACK AUTOMÁTICO
+async function gerarPlanoComFallback(prompt: string): Promise<string> {
+  const modelos = [
+    { nome: "llama-3.3-70b-versatile", descricao: "Principal" },
+    { nome: "llama-3.1-8b-instant", descricao: "Backup" }
+  ];
+
+  for (const modelo of modelos) {
+    try {
+      console.log(`🤖 Tentando com ${modelo.nome} (${modelo.descricao})...`);
+      
+      const response = await groq.chat.completions.create({
+        model: modelo.nome,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 5000,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error("Resposta vazia da IA");
+      }
+
+      console.log(`✅ ${modelo.nome} respondeu com sucesso`);
+      return content;
+
+    } catch (error) {
+      console.error(`❌ ${modelo.nome} falhou:`, error);
+      
+      // Se for o último modelo, propaga o erro
+      if (modelo === modelos[modelos.length - 1]) {
+        throw error;
+      }
+      
+      console.log(`🔄 Tentando próximo modelo...`);
+    }
+  }
+
+  throw new Error("Todos os modelos falharam");
+}
+
 export async function POST(req: Request) {
   console.log("🏋️ IA Personal Trainer - Iniciando...");
 
   try {
     const { userData, diasTreino, metaCalorica } = await req.json();
 
-    // 🎯 PROMPT ESPECIALIZADO PARA 5 DIAS
+    // 🎯 PROMPT ESPECIALIZADO MANTENDO TODA ESPECIFICIDADE
     const prompt = `Você é um PERSONAL TRAINER ESPECIALIZADO com 15 anos de experiência.
 
-CRIE UM PLANO DE TREINO PARA:
-- NOME: ${userData.name}
-- OBJETIVO: ${userData.goal}
-- EXPERIÊNCIA: ${userData.experience_level}
-- IDADE: ${userData.idade || 'Não informada'} anos
-- GÊNERO: ${userData.gender}
-- BIOTIPO: ${userData.biotype}
-- FREQUÊNCIA: ${diasTreino} dias/semana
-- META CALÓRICA: ${metaCalorica} kcal/dia
+PERFIL DO CLIENTE:
+Nome: ${userData.name}
+Objetivo: ${userData.goal}
+Experiência: ${userData.experience_level}
+Idade: ${userData.idade || 'Não informada'} anos
+Gênero: ${userData.gender}
+Biotipo: ${userData.biotype}
+Frequência: ${diasTreino} dias/semana
+Meta Calórica: ${metaCalorica} kcal/dia
 
-ANÁLISE TÉCNICA:
+ANÁLISE TÉCNICA PARA ${userData.experience_level.toUpperCase()}:
 ${userData.experience_level === 'iniciante_absoluto' ? 
-  '• FOCO: Técnica correta, exercícios básicos, adaptação neuromuscular\n• INTENSIDADE: Baixa-Moderada\n• DESCANSO: 60-90 segundos\n• EXERCÍCIOS: Máquinas e pesos livres básicos' :
+  'FOCO: Técnica correta, exercícios básicos, adaptação neuromuscular. INTENSIDADE: Baixa-Moderada. DESCANSO: 60-90s. EXERCÍCIOS: Máquinas e pesos livres básicos.' :
 userData.experience_level === 'iniciante' ?
-  '• FOCO: Progressão de carga, execução precisa\n• INTENSIDADE: Moderada\n• DESCANSO: 60-90 segundos\n• EXERCÍCIOS: Compostos fundamentais' :
+  'FOCO: Progressão de carga, execução precisa. INTENSIDADE: Moderada. DESCANSO: 60-90s. EXERCÍCIOS: Compostos fundamentais.' :
 userData.experience_level === 'intermediario' ?
-  '• FOCO: Volume e intensidade balanceados\n• INTENSIDADE: Moderada-Alta\n• DESCANSO: 45-90 segundos\n• EXERCÍCIOS: Compostos + isolados' :
-  '• FOCO: Intensidade máxima, técnicas avançadas\n• INTENSIDADE: Alta\n• DESCANSO: 30-60 segundos\n• EXERCÍCIOS: Avançados e variações'
+  'FOCO: Volume e intensidade balanceados. INTENSIDADE: Moderada-Alta. DESCANSO: 45-90s. EXERCÍCIOS: Compostos + isolados.' :
+  'FOCO: Intensidade máxima, técnicas avançadas. INTENSIDADE: Alta. DESCANSO: 30-60s. EXERCÍCIOS: Avançados e variações.'
 }
 
-ESTRUTURA PARA ${diasTreino} DIAS/SEMANA (SEGUNDA A SEXTA):
+ESTRUTURA SEMANAL ${diasTreino} DIAS (SEGUNDA A SEXTA):
 ${gerarEstruturaSemanal(diasTreino, userData.goal, userData.experience_level)}
 
-DIRETRIZES PARA ${userData.goal.toUpperCase()}:
+PARÂMETROS PARA ${userData.goal.toUpperCase()}:
 ${userData.goal === 'hipertrofia' ? 
-  '• Volume: 3-4 séries por exercício\n• Repetições: 8-12\n• Progressão: Aumentar carga semanalmente\n• Foco: Músculos alvo com múltiplos exercícios' :
+  'Volume: 3-4 séries. Repetições: 8-12. Progressão: Aumentar carga semanalmente. Foco: Músculos alvo com múltiplos exercícios.' :
 userData.goal === 'emagrecimento' ?
-  '• Volume: 3-4 séries por exercício\n• Repetições: 12-15\n• Descanso: Curto (30-60s)\n• Foco: Manter massa muscular em déficit' :
+  'Volume: 3-4 séries. Repetições: 12-15. Descanso: Curto (30-60s). Foco: Manter massa muscular em déficit.' :
 userData.goal === 'força' ?
-  '• Volume: 3-5 séries por exercício\n• Repetições: 4-6\n• Descanso: Longo (2-3min)\n• Foco: Exercícios compostos pesados' :
-  '• Volume: 3-4 séries por exercício\n• Repetições: 10-15\n• Descanso: 45-90s\n• Foco: Resistência muscular'
+  'Volume: 3-5 séries. Repetições: 4-6. Descanso: Longo (2-3min). Foco: Exercícios compostos pesados.' :
+  'Volume: 3-4 séries. Repetições: 10-15. Descanso: 45-90s. Foco: Resistência muscular.'
 }
 
 EXERCÍCIOS ADEQUADOS PARA ${userData.experience_level.toUpperCase()}:
 ${gerarExerciciosPorNivel(userData.experience_level)}
 
-IMPORTANTE:
-- Gerar APENAS dias úteis (monday, tuesday, wednesday, thursday, friday)
-- Ajuste complexidade para ${userData.experience_level}
-- Exercícios REALISTAS e SEGUROS
-- Progressão adequada ao nível
-- Descanso entre séries apropriado
-- Se ${diasTreino} < 5, use dias de descanso com "descanso": true
+REGRAS OBRIGATÓRIAS:
+1. Gerar APENAS dias úteis (monday, tuesday, wednesday, thursday, friday)
+2. Ajuste complexidade para ${userData.experience_level}
+3. Exercícios REALISTAS, SEGUROS e disponíveis em academias brasileiras
+4. Progressão adequada ao nível de experiência
+5. Descanso entre séries apropriado ao objetivo
+6. Se ${diasTreino} < 5 dias, preencher dias restantes com "descanso": true
+7. Nomes de exercícios em PORTUGUÊS do Brasil
+8. Duração estimada REALISTA (30-60 minutos por treino)
 
-RETORNE APENAS JSON VÁLIDO seguindo este formato:
+FORMATO JSON OBRIGATÓRIO (retorne APENAS o JSON, sem texto adicional):
 
 {
   "semana": {
@@ -104,7 +148,7 @@ RETORNE APENAS JSON VÁLIDO seguindo este formato:
             "series": 3,
             "repeticoes": "10-12",
             "descanso": "60s",
-            "observacoes": "Execução controlada"
+            "observacoes": "Execução controlada, pegada na largura dos ombros"
           },
           {
             "nome": "Supino Inclinado com Halteres",
@@ -113,13 +157,25 @@ RETORNE APENAS JSON VÁLIDO seguindo este formato:
             "descanso": "60s"
           },
           {
+            "nome": "Crucifixo na Polia",
+            "series": 3,
+            "repeticoes": "12-15",
+            "descanso": "45s"
+          },
+          {
             "nome": "Tríceps Testa",
+            "series": 3,
+            "repeticoes": "12-15",
+            "descanso": "45s"
+          },
+          {
+            "nome": "Tríceps Corda",
             "series": 3,
             "repeticoes": "12-15",
             "descanso": "45s"
           }
         ],
-        "duracaoEstimada": 45,
+        "duracaoEstimada": 50,
         "intensidade": "Moderada"
       }
     },
@@ -135,32 +191,68 @@ RETORNE APENAS JSON VÁLIDO seguindo este formato:
             "nome": "Barra Fixa",
             "series": 3,
             "repeticoes": "8-10",
-            "descanso": "90s"
+            "descanso": "90s",
+            "observacoes": "Use auxílio se necessário"
+          },
+          {
+            "nome": "Remada Curvada",
+            "series": 4,
+            "repeticoes": "10-12",
+            "descanso": "60s"
+          },
+          {
+            "nome": "Rosca Direta",
+            "series": 3,
+            "repeticoes": "10-12",
+            "descanso": "60s"
           }
         ],
-        "duracaoEstimada": 50,
+        "duracaoEstimada": 55,
+        "intensidade": "Moderada"
+      }
+    },
+    "thursday": {
+      "treino": {
+        "tipo": "Pernas",
+        "grupoMuscular": ["Quadríceps", "Posteriores", "Glúteos"],
+        "exercicios": [
+          {
+            "nome": "Agachamento Livre",
+            "series": 4,
+            "repeticoes": "8-12",
+            "descanso": "90s",
+            "observacoes": "Profundidade até paralelo"
+          }
+        ],
+        "duracaoEstimada": 60,
+        "intensidade": "Alta"
+      }
+    },
+    "friday": {
+      "treino": {
+        "tipo": "Ombros/Abdômen",
+        "grupoMuscular": ["Ombros", "Abdômen"],
+        "exercicios": [
+          {
+            "nome": "Desenvolvimento com Barra",
+            "series": 4,
+            "repeticoes": "8-12",
+            "descanso": "60s"
+          }
+        ],
+        "duracaoEstimada": 45,
         "intensidade": "Moderada"
       }
     }
   }
 }
 
-GERE O PLANO COMPLETO PARA OS 5 DIAS ÚTEIS (monday a friday).`;
+GERE O PLANO COMPLETO SEGUINDO EXATAMENTE ESTE FORMATO PARA OS 5 DIAS ÚTEIS.`;
 
-    console.log("📤 Enviando requisição para GPT-OSS 120B...");
+    console.log("📤 Enviando requisição com sistema de fallback...");
 
-    const response = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 5000,
-    });
-
-    const content = response.choices[0]?.message?.content;
-    
-    if (!content) {
-      throw new Error("Resposta vazia da IA");
-    }
+    // 🔥 USAR FUNÇÃO COM FALLBACK
+    const content = await gerarPlanoComFallback(prompt);
 
     console.log("📝 Resposta recebida (primeiros 300 chars):", content.substring(0, 300));
 
@@ -216,7 +308,7 @@ function gerarEstruturaSemanal(diasTreino: number, objetivo: string, experiencia
   const estruturaObjetivo = estruturas[objetivo as keyof typeof estruturas] as any; //eslint-disable-line
   const estrutura = estruturaObjetivo?.[diasTreino] || ["Full Body"];
   
-  return estrutura.map((dia: string) => `• ${dia}`).join('\n');
+  return estrutura.map((dia: string) => `${dia}`).join('\n');
 }
 
 function gerarExerciciosPorNivel(experiencia: string) {
@@ -243,5 +335,5 @@ function gerarExerciciosPorNivel(experiencia: string) {
     ]
   };
 
-  return exercicios[experiencia as keyof typeof exercicios]?.join('\n') || "Exercícios básicos";
+  return exercicios[experiencia as keyof typeof exercicios]?.join('. ') || "Exercícios básicos";
 }
